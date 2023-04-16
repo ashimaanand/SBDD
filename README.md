@@ -60,7 +60,9 @@ chmod +x qvina2.1
 
 We need MGLTools for preparing the receptor for docking (pdb -> pdbqt) but it can mess up your conda environment, so I recommend to make a new one:
 ```bash
-conda create -n mgltools -c bioconda mgltools
+conda create -n pymols -c schrodinger pymol
+
+conda activate pymol
 ```
 
 ## CrossDocked Benchmark
