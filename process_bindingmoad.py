@@ -30,13 +30,17 @@ atom_decoder = dataset_info['atom_decoder']
 
 def read_label_file(csv_path):
     """
-    Read BindingMOAD's label file
-    Args:
-        csv_path: path to 'every.csv'
-    Returns:
-        Nested dictionary with all ligands. First level: EC number,
-            Second level: PDB ID, Third level: list of ligands. Each ligand is
-            represented as a tuple (ligand name, validity, SMILES string)
+    The function read_label_file takes a path to a CSV file as input and returns a nested dictionary 
+    with ligand information. The CSV file is assumed to be the 'every.csv' file from the BindingMOAD dataset.
+    The output dictionary is organized into three levels: the first level is based on the EC number 
+    (enzyme commission number), the second level is based on the PDB ID (protein data bank identifier), 
+    and the third level is a list of ligands for that PDB ID. Each ligand is represented as a tuple containing 
+    the ligand name, validity, and SMILES string.
+
+    The function reads each line of the CSV file and parses the data into the nested dictionary. 
+    It starts by creating a new class in the dictionary when it encounters a row with a non-empty first column. 
+    It creates a new protein in the class when it encounters a row with a non-empty third column. 
+    It adds a new ligand to the protein when it encounters a row with a non-empty fourth column.
     """
     ligand_dict = {}
 
@@ -68,12 +72,10 @@ def read_label_file(csv_path):
 
 def compute_druglikeness(ligand_dict):
     """
-    Computes RDKit's QED value and adds it to the dictionary
-    Args:
-        ligand_dict: nested ligand dictionary
-    Returns:
-        the same ligand dictionary with additional QED values
+    The compute_druglikeness function takes a ligand dictionary, computes the QED value for each ligand using RDKit, 
+    and adds the QED value to the dictionary.
     """
+
     print("Computing QED values...")
     for p, m in tqdm([(p, m) for c in ligand_dict for p in ligand_dict[c]
                       for m in ligand_dict[c][p]]):
@@ -88,7 +90,16 @@ def compute_druglikeness(ligand_dict):
 
 
 def filter_and_flatten(ligand_dict, qed_thresh, max_occurences, seed):
+    """
+    A hierarchical dictionary of ligands, a QED threshold, a maximum number of occurrences, and a seed for random number 
+    creation are all inputs to the filter_and_flatten function. It returns a flattened list of the filtered ligands after 
+    filtering the ligands according to the QED threshold and the maximum number of occurrences.
 
+    It accomplishes this by first compiling a list of every ligand in the nested dictionary, randomly rearranging the 
+    list with the supplied seed, and then iterating through the rearranged list to remove ligands that do not satisfy 
+    the given requirements. The programme uses a defaultdict to keep track of the number of times each ligand name appears. 
+    The final output is a list that has the ligands that have been filtered added to it.
+    """
     filtered_examples = []
     all_examples = [(c, p, m) for c in ligand_dict for p in ligand_dict[c]
                     for m in ligand_dict[c][p]]
@@ -180,6 +191,10 @@ def ligand_list_to_dict(ligand_list):
 def process_ligand_and_pocket(pdb_struct, ligand_name, ligand_chain,
                               ligand_resi, dist_cutoff, ca_only,
                               compute_quaternion=False):
+    """
+    The function extracts and processes the ligand and pocket residues from a PDB structure and returns their 
+    coordinates and one-hot encodings as dictionaries.
+    """
     try:
         residues = {obj.id[1]: obj for obj in
                     pdb_struct[0][ligand_chain].get_residues()}
@@ -348,6 +363,12 @@ def get_bond_length_arrays(atom_mapping):
 
 
 def get_lennard_jones_rm(atom_mapping):
+    """
+    Function computes Lennard-Jones Rm values for each pair of atoms in an atom mapping, using bond length 
+    information from the constants module or average covalent radii when no bond length information is available. 
+    The resulting Rm matrix is symmetric
+    """
+
     # Bond radii for the Lennard-Jones potential
     LJ_rm = np.zeros((len(atom_mapping), len(atom_mapping)))
 
@@ -477,7 +498,7 @@ if __name__ == '__main__':
         pair_dict = ligand_list_to_dict(data_split[split])
 
         tic = time()
-        num_failed = 0
+        num_Run = 0
         with tqdm(total=n_tot) as pbar:
             for p in pair_dict:
 
@@ -564,8 +585,8 @@ if __name__ == '__main__':
                         io.save(str(pdb_file_out))
 
                 pbar.update(len(pair_dict[p]))
-                num_failed += (len(pair_dict[p]) - len(pdb_successful))
-                pbar.set_description(f'#failed: {num_failed}')
+                num_Run += (len(pair_dict[p]) - len(pdb_successful))
+                pbar.set_description(f'#Run: {num_Run}')
 
 
         lig_coords = np.concatenate(lig_coords, axis=0)
