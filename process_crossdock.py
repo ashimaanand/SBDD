@@ -20,20 +20,25 @@ import torch
 from analysis.molecule_builder import build_molecule
 import constants
 from constants import covalent_radii, dataset_params
-import warnings
 
-# suppress DeprecationWarning
-warnings.filterwarnings("ignore", category= DeprecationWarning)
 
+#  accessing the corresponding values from dataset_params dictionary using the key 'crossdock_full'
 datainfo = dataset_params['crossdock_full']
 amino_acid_dict = datainfo['aa_encoder']
 atom_dict = datainfo['atom_encoder']
 atom_decoder = datainfo['atom_decoder']
 
 
-def process_ligand_and_pocket(pdbfile, sdffile,
-                              atom_dict, dist_cutoff, ca_only):
-    pdb_struct = PDBParser(QUIET=True).get_structure('', pdbfile)
+def process_ligand_and_pocket_run(pdbfile, sdffile,atom_dict, dist_cutoff, ca_only):
+    """
+    A pdb file, a sdf file, an atom dictionary, a distance cutoff, and a boolean ca_only parameter indicating 
+    whether to take into account only C-alpha atoms or all of the atoms in the pocket are inputs for this function. 
+    Based on the distance cutoff, it extracts the ligand and pocket residues from the pdb and sdf files. 
+    The ligand and pocket residues are then transformed into one-hot encoding based on the atom dictionary, 
+    and the ligand and pocket data are returned as dictionaries.
+    """
+    
+    pdb_structure = PDBParser(QUIET=True).get_structure('', pdbfile)
 
     try:
         ligand = Chem.SDMolSupplier(str(sdffile))[0]
@@ -58,7 +63,7 @@ def process_ligand_and_pocket(pdbfile, sdffile,
 
     # Find interacting pocket residues based on distance cutoff
     pocket_residues = []
-    for residue in pdb_struct[0].get_residues():
+    for residue in pdb_structure[0].get_residues():
         res_coords = np.array([a.get_coord() for a in residue.get_atoms()])
         if is_aa(residue.get_resname(), standard=True) and \
                 (((res_coords[:, None, :] - lig_coords[None, :, :]) ** 2).sum(-1) ** 0.5).min() < dist_cutoff:
@@ -113,6 +118,11 @@ def process_ligand_and_pocket(pdbfile, sdffile,
 
 
 def compute_smiles(positions, one_hot, mask):
+    """
+    This function takes as input the ligand positions, one-hot encoding, 
+    and mask, and returns the SMILES string representation of the ligand molecule.
+    """
+
     print("Computing SMILES ...")
 
     atom_types = np.argmax(one_hot, axis=-1)
@@ -122,7 +132,7 @@ def compute_smiles(positions, one_hot, mask):
     atom_types = [torch.from_numpy(x) for x in np.split(atom_types, sections)]
 
     mols_smiles = []
-    Run = 0
+    attempt = 0
     pbar = tqdm(enumerate(zip(positions, atom_types)),
                 total=len(np.unique(mask)))
     for i, (pos, atom_type) in pbar:
@@ -130,16 +140,23 @@ def compute_smiles(positions, one_hot, mask):
         try:
             mol = Chem.MolToSmiles(mol)
         except:
-            Run += 1
+            attempt += 1
             continue
         if mol is not None:
             mols_smiles.append(mol)
-        pbar.set_description(f'{len(mols_smiles)}/{i + 1} successful, {len(mols_smiles)}/{Run} Run')
+        pbar.set_description(f'{len(mols_smiles)}/{i + 1} successful, {len(mols_smiles)}/{attempt} attempt')
 
     return mols_smiles
 
 
 def get_n_nodes(lig_mask, pocket_mask, smooth_sigma=None):
+    
+    """
+    This function takes as input the ligand and pocket masks and an optional smooth_sigma parameter 
+    to smooth the joint histogram. It computes the joint histogram 
+    of the number of nodes in the ligand and pocket graphs and optionally applies smoothing. 
+    It returns the joint histogram.
+    """
     # Joint distribution of ligand's and pocket's number of nodes
     idx_lig, n_nodes_lig = np.unique(lig_mask, return_counts=True)
     idx_pocket, n_nodes_pocket = np.unique(pocket_mask, return_counts=True)
@@ -169,6 +186,10 @@ def get_n_nodes(lig_mask, pocket_mask, smooth_sigma=None):
 
 
 def get_bond_length_arrays(atom_mapping):
+    """
+    This function takes as input an atom mapping dictionary and returns three bond 
+    length arrays based on the constants module in the code.
+    """
     bond_arrays = []
     for i in range(3):
         bond_dict = getattr(constants, f'bonds{i + 1}')
@@ -188,6 +209,11 @@ def get_bond_length_arrays(atom_mapping):
 
 
 def get_lennard_jones_rm(atom_mapping):
+    """
+    This function takes as input an atom mapping dictionary and returns the Lennard-Jones 
+    radius matrix based on the constants module in the code.
+    """
+
     # Bond radii for the Lennard-Jones potential
     LJ_rm = np.zeros((len(atom_mapping), len(atom_mapping)))
 
@@ -217,7 +243,10 @@ def get_lennard_jones_rm(atom_mapping):
 
 
 def get_type_histograms(lig_one_hot, pocket_one_hot, atom_encoder, aa_encoder):
-
+    """
+    This function takes as input the ligand and pocket one-hot encodings as well as the atom and amino acid encoders, 
+    and returns the atom and amino acid histograms.
+    """
     atom_decoder = list(atom_encoder.keys())
     atom_counts = {k: 0 for k in atom_encoder.keys()}
     for a in [atom_decoder[x] for x in lig_one_hot.argmax(1)]:
@@ -247,6 +276,19 @@ def saveall(filename, pdb_and_mol_ids, lig_coords, lig_one_hot, lig_mask,
 
 
 if __name__ == '__main__':
+    """
+    The main function of this script prepares a dataset for protein-ligand binding affinity prediction. 
+    The script takes a directory of protein-ligand complexes in PDB and SDF formats and processes them into a format 
+    that can be used for machine learning models. The processed data is split into train, validation, and test sets, 
+    and the output is saved in the specified output directory. The script also computes several statistics and information 
+    about the dataset, such as the distribution of protein and ligand sizes, atom and amino acid histograms, and the number 
+    of nodes in each protein-ligand complex. 
+    The output summary is saved to a text file, and several plots are generated to visualize the dataset statistics.
+    """
+
+
+
+
     parser = argparse.ArgumentParser()
     parser.add_argument('basedir', type=Path)
     parser.add_argument('--outdir', type=Path, default=None)
@@ -285,7 +327,7 @@ if __name__ == '__main__':
     n_val_before = len(data_split['val'])
     n_test_before = len(data_split['test'])
 
-    Success_save = []
+    Run_save = []
 
     n_samples_after = {}
     for split in data_split.keys():
@@ -305,9 +347,9 @@ if __name__ == '__main__':
         pdb_sdf_dir.mkdir(exist_ok=True)
 
         tic = time()
-        num_Success = 0
+        num_Run = 0
         pbar = tqdm(data_split[split])
-        pbar.set_description(f'#Success: {num_Success}')
+        pbar.set_description(f'#Run: {num_Run}')
         for pocket_fn, ligand_fn in pbar:
 
             sdffile = datadir / f'{ligand_fn}'
@@ -316,21 +358,21 @@ if __name__ == '__main__':
             try:
                 struct_copy = PDBParser(QUIET=True).get_structure('', pdbfile)
             except:
-                num_Success += 1
-                Success_save.append((pocket_fn, ligand_fn))
-                print(Success_save[-1])
-                pbar.set_description(f'#Success: {num_Success}')
+                num_Run += 1
+                Run_save.append((pocket_fn, ligand_fn))
+                print(Run_save[-1])
+                pbar.set_description(f'#Run: {num_Run}')
                 continue
 
             try:
-                ligand_data, pocket_data = process_ligand_and_pocket(
+                ligand_data, pocket_data = process_ligand_and_pocket_run(
                     pdbfile, sdffile,
                     atom_dict=atom_dict, dist_cutoff=args.dist_cutoff, ca_only=args.ca_only)
             except (KeyError, AssertionError, FileNotFoundError, IndexError,
                     ValueError) as e:
                 print(type(e).__name__, e, pocket_fn, ligand_fn)
-                num_Success += 1
-                pbar.set_description(f'#Success: {num_Success}')
+                num_Run += 1
+                pbar.set_description(f'#Run: {num_Run}')
                 continue
 
             pdb_and_mol_ids.append(f"{pocket_fn}_{ligand_fn}")
@@ -445,4 +487,4 @@ if __name__ == '__main__':
     # Print summary
     print(summary_string)
 
-    print(Success_save)
+    print(Run_save)
